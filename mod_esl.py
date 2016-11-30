@@ -103,7 +103,7 @@ class ESLClient(threading.Thread):
         '''
         
         # 设置呼叫相关参数
-        
+
         #设置是否路由媒体，bypass时无法用FS录音
         # self._con_send.execute("set", "bypass_media=true", uuid)
         
@@ -112,7 +112,7 @@ class ESLClient(threading.Thread):
         
         # 设置主叫侧在接续时的回铃，可以设置成特定频率，也可用音频文件
         #self._con_send.execute("set", "ringback=%(2000, 4000, 440.0, 480.0)", uuid)     #放在leg b的dialstring无效
-        self._con_send.execute("set", "ringback=/usr/local/freeswitch/sounds/CONTINUE185.wav", uuid)    #放在leg b的dialstring无效
+        self._con_send.execute("set", "ringback=/usr/share/freeswitch/sounds/en/us/callie/ivr/8000/ivr-welcome.wav", uuid)    #放在leg b的dialstring无效
         
         # 设置是否立即播放ringback设定的音频
         '''请参见https://freeswitch.org/confluence/display/FREESWITCH/180+vs+183+vs+Early+Media'''
@@ -139,5 +139,9 @@ class ESLClient(threading.Thread):
         # 启动呼叫
         # 呼叫可以用originate，但相比bridge，在目前场景偏麻烦。用在双向呼中比较合适
         #self._con_send.execute("originate", "sofia/gateway/gw1/13811334545", uuid)
-        self._con_send.execute("bridge", "{instant_ringback=true}sofia/gateway/gw1/"+call_in_no, uuid)
+        self._con_send.execute("bridge", "{instant_ringback=true}sofia/gateway/gw_axb/"+call_in_no, uuid)
         #self._con_send.execute("bridge", "{instant_ringback=true}sofia/gateway/gw2/"+"8613811685434", uuid)
+
+                
+        
+     

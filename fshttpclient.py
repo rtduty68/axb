@@ -73,7 +73,7 @@ HEADER_LENGTH=9
 #url = URL("http://192.168.107.163:8001/")
 #url = URL("http://gw.api.tbsandbox.com:80/")
 ssl_options={'ciphers': _DEFAULT_CIPHERS,'ca_certs': None, 'cert_reqs': gevent.ssl.CERT_NONE,}
-url = URL("http://192.168.107.166:8001/")
+url = URL("http://webrtcdemo-lubin.c9users.io")
 http = HTTPClient.from_url(url, concurrency=60, network_timeout=5,
                 connection_timeout=5,insecure=True, ssl_options=ssl_options)
 conn_list = []
@@ -202,6 +202,7 @@ def process_response(client, req, seqno, method):
     params_url = URL(N_REST)
     params_url.query = sign_parameters
     try:
+        logger.info('http get %s', params_url.request_uri)
         response = http.get(params_url.request_uri)
         data = response.read()
         logger.info('response data=%s', data)

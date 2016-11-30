@@ -8,3 +8,13 @@ FSasPaaS.py<-->fshttpclient.py是unixsocket或tcp/ip
 是罗博士定义的私有协议。
 fshttpclient.py跟阿里或其他server就是http协议了。目前用的是阿里小号提供的axb业务的协议。
 webserver.py 测试用http server
+
+python ESL的使用说明
+http://wiki.freeswitch.org/wiki/Event_Socket_Library
+https://freeswitch.org/confluence/display/FREESWITCH/Python+ESL
+
+
+运行
+运行fshttpclient.py需要安装的包
+pip install gevent
+pip install geventhttpclient
