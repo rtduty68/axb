@@ -16,5 +16,5 @@ server_interface = ("/tmp/httpc_freeswitch")        #unixsock模式
 #server_interface = ("127.0.0.1", 1234)                    #tcp/ip模式
 # FS ESL 配置
 server_esl = ("127.0.0.1",  8021, "ClueCon" )
-#server_esl = ("192.168.1.230",  8021, "Pbx740123" )
+#server_esl = ("192.168.106.192",  9021, "9501395013" )
 service_key = "95013service"    #需与dialplan中servicekey一致

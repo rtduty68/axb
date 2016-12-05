@@ -1,9 +1,13 @@
 #coding=utf-8
+'''接口模块，实现同接口服务器的通信
+采用asynchat.async_chat实现，支持unixsock或tcp/ip
+注意，2.7的async_chat.py有个bug，在某些情况下push操作会导致‘deque index out of range’异常，解决方法请参见http://bugs.python.org/issue17925
+'''
 import asyncore,asynchat,socket
 import logging
 import marshal
 import struct
-from time import sleep
+import time
 
 # socket接口，ESL模块调用其xxx方法发送数据给httpclient进程，根据该进程返回数据执行后续操作
 class SocketClient(asynchat.async_chat):
@@ -63,7 +67,7 @@ class SocketClient(asynchat.async_chat):
                 return
             except Exception,e:
                 self._logger.error("connect_socketserver() error. %r%r", Exception, e)
-                sleep(1)
+                time.sleep(1)
         
     def send_pack(self,params):
         try:
