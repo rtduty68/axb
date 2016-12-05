@@ -1,3 +1,5 @@
+fsaspaas.log
+fsaspaas.log.*
 *.jar
 sftp-config.json
 *.pyc
