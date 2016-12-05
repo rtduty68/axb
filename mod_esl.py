@@ -1,10 +1,11 @@
 #coding=utf-8
 
+import time
 import logging
 import threading
 import ESL
 import mod_esl_event
-from time import sleep
+import mod_esl_operate
 
 class ESLClient(threading.Thread):  
     def __init__(self, server_esl,service_key):  
@@ -14,6 +15,11 @@ class ESLClient(threading.Thread):
         self._password = server_esl[2]
         self._service_key = service_key
         self._logger = logging.getLogger('ESLClient')
+        self._con_recv = None
+        self._con_send = None
+        self.last_msg_time = time.time()                         # 最后收到消息时间
+        self.event_connected = threading.Event()    # 连接建立事件
+        self.event_disconnected = threading.Event()    # 连接断开事件
         self.connect_eslserver("both")
         
     def connect_eslserver(self, mode):
@@ -23,25 +29,28 @@ class ESLClient(threading.Thread):
         #建立recv连接
         if mode == "both" or mode == "recv":
             self._logger.info('esl(recv) connecting to %s:%s', self._host,self._port)
-            self._con_recv = None   # 不知这中方法Python中是什么效果，观察下
+            if self._con_recv != None:
+                self._con_recv.disconnect()
             self._con_recv = ESL.ESLconnection(self._host,self._port,self._password)
             while True:
                 if self._con_recv.connected():
                     self._logger.info('esl(recv) connected to %s:%s', self._host,self._port)
+                    self.last_msg_time = time.time() 
                     self._con_recv.filter("variable_servicekey", self._service_key)
                     self._con_recv.filter("Event-Name","SHUTDOWN")
                     self._con_recv.filter("Event-Name","HEARTBEAT")
-                    self._con_recv.events("plain", "SHUTDOWN HEARTBEAT CHANNEL_PARK") # SERVER_DISCONNECTED事件不用设置也能收到
+                    self._con_recv.events("plain", "SHUTDOWN HEARTBEAT CHANNEL_PARK CHANNEL_HANGUP_COMPLETE") # SERVER_DISCONNECTED事件不用设置也能收到
                     break
                 else:
                     self._logger.warning('esl(recv) connect to %s:%s error.', self._host,self._port)
-                    sleep(1)
+                    time.sleep(1)
                     self._logger.info('esl(recv) connecting to %s:%s', self._host,self._port)
                     self._con_recv = ESL.ESLconnection(self._host,self._port,self._password)
         #建立send连接
         if mode == "both" or mode == "send":
             self._logger.info('esl(send) connecting to %s:%s', self._host,self._port)
-            self._con_send = None   # 不知这中方法Python中是什么效果，观察下
+            if self._con_send != None:
+                self._con_send.disconnect()
             self._con_send = ESL.ESLconnection(self._host,self._port,self._password)
             while True:
                 if self._con_send.connected():
@@ -51,27 +60,48 @@ class ESLClient(threading.Thread):
                     break
                 else:
                     self._logger.warning('esl(send) connect to %s:%s error.', self._host,self._port)
-                    sleep(1)
+                    time.sleep(1)
                     self._logger.info('esl(send) connecting to %s:%s', self._host,self._port)
                     self._con_send = ESL.ESLconnection(self._host,self._port,self._password)
-
+        self.event_disconnected.clear()
+        self.event_connected.set()
+        
     def run(self):
         while True:
             while self._con_recv.connected():
                 #eventRecv = self._con_recv.recvEventTimed(100);
+                self._logger.debug("run() enter recvEvent")
                 eventRecv = self._con_recv.recvEvent()
+                self._logger.debug("run() exit recvEvent")
                 if eventRecv:
                     ret = mod_esl_event.process(self._con_recv,  eventRecv)
-                    if ret == "HEARTBEAT":
-                        pass
+                    '''处理连接心跳，只要是收到消息均认为连接存在，包括SHUTDOWN，SERVER_DISCONNECTED
+                    因为即使在SHUTDOWN，SERVER_DISCONNECTED时将连接的心跳时间更新，
+                    在判断connected（）也返回断开，不影响重连处理'''
+                    self.last_msg_time = time.time()
+                    
             #从while退出说明_con_recv已经断开，因此_con_send也已断开，所以对_con_send一并重连
             '''注意，观察发现，如果不对_con_send执行一次recvEvent或send等读写操作的话
-            此时_con_send.connected()仍返回1（连接状态）'''
-            self._logger.error('esl disconnect to %s:%s error.', self._host,self._port)
-            self.connect_eslserver("both")
-            #self.connect_eslserver("recv")
-            #self._con_send.disconnect()
-            #self.connect_eslserver("send")
+            此时_con_send.connected()仍返回1（连接状态）,所以也无法根据该返回值判读是否需要重连'''
+            #self._logger.error('esl disconnect to %s:%s.', self._host,self._port)
+            self.event_disconnected.set()
+            self.event_connected.clear()
+            self._logger.debug("run() enter wait")
+            self.event_connected.wait()
+            self._logger.debug("run() exit wait")
+    
+    #此方法未用        
+    def notify_monitor(self):
+        ''''3.2之前版本python，Condition.wait()始终返回None，无法直接根据其返回值直接判断
+        是超时结束还是被notify唤醒，所以统一用last_msg_time来判断是否需重连'''
+        self.last_msg_time = 0.0                    #如上所述，将last_msg_time置为0.0，方便监视线程判断是否重连
+        self.condition_connect.acquire()
+        self.condition_connect.notify()   #通知监视线程进行重连，此方式不可行，因wait的有3个线程，并不一定确保能通知到监视线程。
+        '''注意，notify_monitor方法可能在run()和process_request()中被调用，
+        在run()中调用时，等待基本没有问题，但在process_request()中被调用时，
+        等待可能回导致mod_interface接收缓冲区满，不等待的话，可能会多次通知监视线程重连'''
+        self.condition_connect.wait()       #等待监视线程重连结束
+        self.condition_connect.release()
 
     def process_request(self,pack): # 注，暂未处理self._con_send.execute等操作的异常
         # 解析请求参数
@@ -88,60 +118,9 @@ class ESLClient(threading.Thread):
             return
         
         # 通过_con_send向FS发送命令
-        ''' 关于ESL发送命令的总结（参见：https://freeswitch.org/confluence/display/FREESWITCH/Event+Socket+Library）
-        1.execute("answer", None, self._uuid)等同与sendRecv("api uuid_answer " + self._uuid)，在socket通信层面是阻塞的，但并不等到所执行的api或application完成
-        execute和sendRecv均直接返回event对象
-        2.send方法是异步的，立即返回一个整数结果表示发送是否执行，具体结果要通过recvEvent获取socket返回的event对象
-        3.上述方法返回的event对象中，"Event-Name":    "SOCKET_DATA","Content-Type":    "command/reply"，
-        且返回的event只能通过调用execute或send方法的同一个ESLconnection来获取，其他ESLESLconnection无法接收到该消息
-        4.关于API和Application关系，参见杜金房《FreeSWITCH权威指南》，举例来讲，answer是App，uuid_answer是API
-        5.代码举例
-        ret = self._con_send.send("api uuid_answer " + self._uuid)
-        retEvent = self._con_send.recvEvent()
-        retEvent = self._con_send.execute("answer", None, uuid)
-        print retEvent.serialize("json")
-        '''
-        
-        # 设置呼叫相关参数
-
-        #设置是否路由媒体，bypass时无法用FS录音
-        # self._con_send.execute("set", "bypass_media=true", uuid)
-        
-        # 设置自动挂断主叫。当channel被park后，需设置此参数才可实现leg b挂断时自动挂断leg a
-        self._con_send.execute("set", "hangup_after_bridge=true", uuid)     #放在leg b的dialstring无效
-        
-        # 设置主叫侧在接续时的回铃，可以设置成特定频率，也可用音频文件
-        #self._con_send.execute("set", "ringback=%(2000, 4000, 440.0, 480.0)", uuid)     #放在leg b的dialstring无效
-        self._con_send.execute("set", "ringback=/usr/share/freeswitch/sounds/en/us/callie/ivr/8000/ivr-welcome.wav", uuid)    #放在leg b的dialstring无效
-        
-        # 设置是否立即播放ringback设定的音频
-        '''请参见https://freeswitch.org/confluence/display/FREESWITCH/180+vs+183+vs+Early+Media'''
-        #self._con_send.execute("set", "instant_ringback=true", uuid) #可以放在leg b的dial string中
-        
-        # 设置ignore_early_media：是否忽略leg b的early media
-        '''当为false时，leg a一直听ringback直到leg b回180或183
-        当为ring_ready时，忽略leg b的180，leg a一直听ringback直到leg b回183
-        当为true时，忽略leg b的180和183，leg a一直听ringback直到leg b回200ok'''
-        #self._con_send.execute("set", "ignore_early_media=ring_ready", uuid) #可以放在leg b的dial string中，默认值是false。 
-        
-        ''' 下面是hold和transfer_ringback的测试，可忽略
-        #self._con_send.execute("set", "transfer_ringback=local_stream://moh", uuid)
-        #self._con_send.execute("hold", "", uuid)
-        '''
-        
-        # 启动录音
-        if record == 'true' :#or 'false':
-            self._con_send.execute("record_session", "/tmp/"+uuid+".wav", uuid)
-        
-        # 发pre_answer
-        #self._con_send.execute("pre_answer", "", uuid) #测试不发也可以,只要设置了ringback，就会向主叫发183
-        
-        # 启动呼叫
-        # 呼叫可以用originate，但相比bridge，在目前场景偏麻烦。用在双向呼中比较合适
-        #self._con_send.execute("originate", "sofia/gateway/gw1/13811334545", uuid)
-        self._con_send.execute("bridge", "{instant_ringback=true}sofia/gateway/gw_axb/"+call_in_no, uuid)
-        #self._con_send.execute("bridge", "{instant_ringback=true}sofia/gateway/gw2/"+"8613811685434", uuid)
-
-                
-        
-     
+        if self.event_connected.is_set():   # 未采用阻塞等待，防止mod_interface的接收缓冲区满
+            # 外呼命令
+            ret = mod_esl_operate.bridge(self._con_send, uuid, "", call_in_no, play_code, record)
+            if ret == "disconnected":   # 发现连接断开，重连。未想清楚是否回引起其他问题，所以并没有重发刚才执行失败的操作，
+                self.event_disconnected.set()
+                self.event_connected.clear()
