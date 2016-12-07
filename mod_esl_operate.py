@@ -68,7 +68,7 @@ def bridge(con,  uuid,  caller, callee, ringback, record):
         # 呼叫中的通道变量，参考https://freeswitch.org/confluence/display/FREESWITCH/Channel+Variables'''
         #con.execute("originate", "sofia/gateway/gw1/13811334545", uuid)
         #ret = con.execute("bridge", "{instant_ringback=true}sofia/gateway/gw1/"+callee, uuid)
-        ret = con.execute("bridge", "{instant_ringback=true}[leg_timeout=8]sofia/external/00862152531116@172.16.195.78:5060|sofia/external/13811334545@127.0.0.1:6060", uuid)
+        ret = con.execute("bridge", "{instant_ringback=true}[leg_timeout=8]sofia/external/"+callee+"@172.16.195.78:5060|sofia/external/13811334545@127.0.0.1:6060", uuid)
         if ret  == None: #连接已断开
             return "disconnected"
     except Exception,e:
